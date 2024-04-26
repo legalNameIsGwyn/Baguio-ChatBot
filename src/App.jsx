@@ -12,7 +12,7 @@ const textSplitter = new RecursiveCharacterTextSplitter({
   chunkOverlap: 0,
 });
 const allSplits = await textSplitter.splitDocuments(docs);
-console.log(allSplits.length);
+// console.log(allSplits.length);
 
 import { ChatOllama } from "@langchain/community/chat_models/ollama";
 
@@ -22,7 +22,7 @@ const ollamaLlm = new ChatOllama({
 });
 
 const response = await ollamaLlm.invoke(
-  "Why is the sky blue?"
+  "Say \"I have been installed successfully!\" don't add anything else."
 );
 console.log(response.content);
 
