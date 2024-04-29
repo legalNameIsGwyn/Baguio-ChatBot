@@ -19,9 +19,13 @@ docker exec -it ollama ollama run phi3
 ```
 npm install
 ```
-7. Run the command below to start the server.
+7. Run the command below to start the LLM server. Wait for the final message *` LLM Running. `* before proceeding to the next step.
+```
+npm run nodemon
+```
+8. Run the command below in the same repo to start the vite server.
 ```
 npm run dev
 ```
-8. Hold down 'ctrl' and click on the Local link.
-9. You should see the message *`I have been installed successfully!`* in the console of the browser.
+9. Hold down 'ctrl' and click on the Local link.
+10. You should see the message *`I have been installed successfully!`* in the console of the browser.

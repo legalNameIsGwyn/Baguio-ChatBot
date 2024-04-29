@@ -1,3 +1,4 @@
+import { initBoot } from "../server"
 
 
 function App() {
