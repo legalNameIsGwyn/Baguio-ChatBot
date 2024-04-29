@@ -6,14 +6,18 @@ import { TextLoader } from "langchain/document_loaders/fs/text";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { OllamaEmbeddings } from "@langchain/community/embeddings/ollama";
 import { MemoryVectorStore } from "langchain/vectorstores/memory";
-import { pull } from "langchain/hub";
 import { createStuffDocumentsChain } from 'langchain/chains/combine_documents';
+import { createRetrievalChain } from 'langchain/chains/retrieval';
 
 const hostname = '127.0.0.1';
 const port = 3000;
 
 const outputParser = new StringOutputParser();
-const splitter = new RecursiveCharacterTextSplitter();
+const splitter = new RecursiveCharacterTextSplitter({
+  chunkSize: 200,
+  chunkOverlap: 20,
+  separators:[".","\n",]
+});
 
 // create the LLM
 const llm = new ChatOllama({
@@ -21,66 +25,69 @@ const llm = new ChatOllama({
   model: "phi3",
 });
 
-// prompt template
-const initPrompt = ChatPromptTemplate.fromMessages([
-  ["system", "Respond with a single sentence no longer than 10 words. Do not add anything else."],
-  ["user", "{input}"],
-]);
+const initLLM = async () => {
+  // prompt template
+  const initPrompt = ChatPromptTemplate.fromMessages([
+    ["system", "Respond with a single sentence no longer than 10 words. Do not add anything else."],
+    ["user", "{input}"],
+  ]);
 
-// includes template in the prompt
-const initChain = initPrompt.pipe(llm).pipe(outputParser);
+  // includes template in the prompt
+  const initChain = initPrompt.pipe(llm).pipe(outputParser);
 
-// calls the model
-console.log('\nInstalled correctly?')
-let response = await initChain.invoke({
-  input: "Are you installed?",
-});
+  // calls the model
+  console.log('\nInstalled correctly?')
+  let response = await initChain.invoke({
+    input: "Are you installed?",
+  });
 
-console.log("LLM: ",response)
-const prompt = ChatPromptTemplate.fromTemplate(`
-  Answer the question in no more than 40 words
-  Context: {context}
-  Question: {input}
-`)
+  console.log("LLM: ",response)
+}
 
-const chain = await createStuffDocumentsChain({
-  llm,
-  prompt,
-});
+const createVectorStore = async () => {
+  // reads the text file
+  const loader = new TextLoader("./src/data/Baguio.txt");
+  const docs = await loader.load();
+  // splits the text file
+  const splitDocs = await splitter.splitDocuments(docs);
 
-// reads the text file
-const loader = new TextLoader("./src/data/Baguio.txt");
-const docs = await loader.load();
-// splits the text file
-const splitDocs = await splitter.splitDocuments(docs);
+  // stores the indexed file IN MEMORY. Will take a while.
+  return await MemoryVectorStore.fromDocuments(
+    splitDocs,
+    new OllamaEmbeddings()
+  );
+}
 
+const createChain = async (vectorStore) =>{
+  const prompt = ChatPromptTemplate.fromTemplate(`
+    Answer the question in less than 40 words. If you don't know the answer reply with "I don't know" and don't try to make up anything.
+    Context: {context}
+    Question: {input}
+  `)
+
+  const chain = await createStuffDocumentsChain({
+    llm,
+    prompt,
+  });
+
+  const retriever = vectorStore.asRetriever({
+    k: 3 // no. of documents to return - default
+  });
+  
+  return await createRetrievalChain({
+    combineDocsChain: chain,
+    retriever
+  });
+}
+
+const chain = await createChain(await createVectorStore());
+
+console.log('Where is near Baguio?')
 const res = await chain.invoke({
-  input: "What is Baguio?",
-  context: splitDocs,
+  input: "What is near Baguio?"
 })
 
-console.log(res)
-// // indexes the file
-// console.log('\nEmbedding and Vectorizing...')
-// const embeddings = new OllamaEmbeddings();
-
-// // stores the indexed file. Will take a while.
-// const vectorStore = await MemoryVectorStore.fromDocuments(
-//   splitDocs,
-//   embeddings
-// );
-// console.log('Completed')
-
-// const retriever = vectorStore.asRetriever();
-// prompt = await pull<ChatPromptTemplate>("rlm/rag-prompt");
-
-
-
-// // let res = await chain.invoke({
-// //   input: 'What is Baguio?'
-// // })
-
-// console.log(res)
+console.log(res.answer)
 
 const server = createServer((req, res) => {
   res.statusCode = 200;
