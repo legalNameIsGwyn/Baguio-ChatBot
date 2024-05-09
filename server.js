@@ -11,6 +11,9 @@ import { createRetrievalChain } from 'langchain/chains/retrieval';
 import { AIMessage, HumanMessage } from '@langchain/core/messages';
 import { MessagesPlaceholder } from '@langchain/core/prompts';
 import { createHistoryAwareRetriever } from 'langchain/chains/history_aware_retriever';
+import { PDFLoader } from "langchain/document_loaders/fs/pdf";
+
+
 
 const hostname = '127.0.0.1';
 const port = 3000;
@@ -22,6 +25,7 @@ const outputParser = new StringOutputParser();
 const llm = new ChatOllama({
   baseUrl: "http://localhost:11434", // Default value
   model: "phi3",
+  temperature: 0.4
 });
 
 const initLLM = async () => {
@@ -45,16 +49,21 @@ const initLLM = async () => {
 
 // returns vectorStore of parsed local data
 const loadData = async () =>{
+  const pdfLoader = new PDFLoader("./src/data/1 page.pdf");
+  const pdfDocs = await pdfLoader.load();
   // reads the text file
   const loader = new TextLoader("./src/data/Baguio.txt");
   const docs = await loader.load();
   // splits the text file
   const splitter = new RecursiveCharacterTextSplitter();
   const splitDocs = await splitter.splitDocuments(docs);
+  let splitPdf = await splitter.splitDocuments(pdfDocs)
+  splitPdf.push(splitDocs)
+
 
   // stores the indexed file. Will take a while.
   return await MemoryVectorStore.fromDocuments(
-    splitDocs,
+    splitPdf,
     new OllamaEmbeddings()
   );
 }
@@ -62,7 +71,7 @@ const loadData = async () =>{
 const createChain = async (vectorStore) => {
   const prompt = ChatPromptTemplate.fromMessages([
     ["system",
-    "Answer the user's question in no more than 40 words."],
+    "Answer the user as dramatically. If you can't find the answer, reply with I don't know. Limit words to 35."],
     ["system", "{context}"],
     new MessagesPlaceholder("chat_history"),
     ["user", "{input}"],
@@ -80,7 +89,7 @@ const createChain = async (vectorStore) => {
   const rephrasePrompt = ChatPromptTemplate.fromMessages([
     new MessagesPlaceholder("chat_history"),
     ["user", "{input}"],
-    ["user", "Given the above conversation, generate a search query to look up in order to get information relevant to the conversation"],
+    ["user", "Given the above conversation, generate a search query to look up in order to get information relevant to the conversation. If you don't have an answer, reply with i don't know"],
   ])
 
   const histRetriver = await createHistoryAwareRetriever({
@@ -97,31 +106,27 @@ const createChain = async (vectorStore) => {
 }
 
 const chain = await createChain(await loadData())
+console.log(await loadData())
+let chatHist = []
 
+// resturns reply to query and logs history
+const chat = async (message) => {
+  let res = await chain.invoke({
+    input: message,
+    chat_history: chatHist,
+  })
+  
+  chatHist.push(new HumanMessage(message))
+  
+  console.log(res,"\n")
+  chatHist.push(new AIMessage(res.answer))
 
-let chatHist = [
-  new AIMessage("My name is Groot.")
-]
+  return res.answer
+}
 
-const introMessage = "Introduce yourself as Groot, the chatbot for Baguio City."
-let message = "Tell me about Baguio"
-
-let res = await chain.invoke({
-  input: introMessage,
-  chat_history: chatHist,
-})
-
-chatHist.push(new HumanMessage(introMessage))
-
-console.log(res.answer,"\n")
-chatHist.push(new AIMessage(res.answer))
+await chat("What is AGRARIAN REFORM COMMUNITY")
  
-res = await chain.invoke({
-  input: message,
-  chat_history: chatHist,
-})
 
-console.log(res)
 
 const server = createServer((req, res) => {
   res.statusCode = 200;
